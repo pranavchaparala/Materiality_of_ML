@@ -80,6 +80,8 @@
             fill: none; 
             transition: all 0.5s ease-in-out;
             cursor: default; /* Change cursor for planted items */
+            /* CRITICAL FIX: Allow the content to overflow the SVG's viewbox without being clipped */
+            overflow: visible;
         }
         
         /* Styles for the animation: applies to all paths inside a flower SVG */
@@ -145,7 +147,7 @@
             <!-- Dots will be populated here by JavaScript -->
         </div>
 
-        <!-- NEW: Status Bar Wrapper for Centering and Preventing Layout Shift -->
+        <!-- Status Bar Wrapper for Centering and Preventing Layout Shift -->
         <div class="mt-4 flex justify-center">
             <div id="status-bar" 
                  class="text-center text-base font-semibold py-2 px-4 rounded-lg 
@@ -502,7 +504,8 @@
         // A. Initial setup of the empty grid
         for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
             const cell = document.createElement('div');
-            cell.className = 'w-full h-full flex items-center justify-center';
+            // FIX: Added 'overflow-visible' to the cell to ensure it doesn't clip children
+            cell.className = 'w-full h-full flex items-center justify-center overflow-visible';
 
             const dotSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             dotSvg.setAttribute('viewBox', '0 0 100 100');

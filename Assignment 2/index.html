@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Draw Garden Grid</title>
+    <!-- Load Tailwind CSS from CDN for easy, modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles to match the minimalist, centered aesthetic and color palette from the image */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e8e8e8; /* Light gray background to match image */
+            color: #3949ab; /* Deep indigo color for text, dots, and drawings */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        /* New wrapper to apply global scale */
+        #scale-wrapper {
+            transform: scale(0.85); /* Scales the content down to 85% */
+            transform-origin: top center; /* Ensures scaling is anchored at the top center */
+            margin: 0; /* Remove default margins */
+        }
+
+        .container-main {
+            width: 100%;
+            max-width: 600px; /* Limit main content width */
+            padding: 2rem;
+            text-align: center;
+        }
+
+        /* --- Tab Styling --- */
+        .tab-button {
+            padding: 8px 16px;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: border-bottom-color 0.2s, opacity 0.2s;
+            opacity: 0.7;
+        }
+
+        .tab-button:hover {
+            opacity: 1;
+        }
+
+        .tab-active {
+            font-weight: bold;
+            border-bottom-color: #3949ab;
+            opacity: 1;
+        }
+        /* --- End Tab Styling --- */
+
+        .dot-svg {
+            /* Styling for the initial dot state */
+            stroke: currentColor; /* Inherits #3949ab from body */
+            stroke-width: 2.5;
+            transition: transform 0.1s ease-out;
+            cursor: pointer;
+        }
+        
+        .dot-svg circle {
+             fill: currentColor; /* Dots are solid */
+             r: 3; /* Reduced radius for a finer dot */
+        }
+
+        .flower-svg {
+            /* Container styling (no fill) */
+            fill: none; 
+            transition: all 0.5s ease-in-out;
+        }
+        
+        /* Styles for the animation: applies to all paths inside a flower SVG */
+        .flower-svg path {
+            stroke: currentColor;
+            stroke-width: 4; /* Increased stroke weight */
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            /* Increased transition duration to 1.0s for slower drawing speed */
+            transition: stroke-dashoffset 1.0s ease-out; 
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    // Custom colors are simplified since we now rely on 'currentColor' from the body
+                    colors: {
+                        'plant-blue': '#3949ab',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+
+<!-- Apply the scale wrapper around the main container -->
+<div id="scale-wrapper">
+    <!-- Simplified container to match the clean background -->
+    <div class="container-main">
+        <header class="text-center mb-6">
+            <!-- Tab Selector -->
+            <div id="category-selector" class="flex justify-center mb-8 border-b border-gray-300">
+                <button 
+                    id="tab-flora" 
+                    class="tab-button tab-active mr-4"
+                    onclick="changeGroup('flora')"
+                >
+                    Flora
+                </button>
+                <button 
+                    id="tab-fauna" 
+                    class="tab-button ml-4"
+                    onclick="changeGroup('fauna')"
+                >
+                    Fauna
+                </button>
+            </div>
+
+            <!-- Styling to match the bold number and slightly faded subtitle -->
+            <h1 class="text-3xl font-semibold" style="color: rgba(57, 73, 171, 1);">Doodle Forest</h1>
+            <p id="garden-subtitle" class="text-sm font-weight mt-1" style="color: rgba(57, 73, 171, 0.7);">more days of growth (Planting: Flora)</p>
+        </header>
+
+        <!-- The 10x10 Grid Container, with reduced gap for a denser look -->
+        <div id="garden-grid" class="grid grid-cols-10 gap-1 md:gap-1 aspect-square w-full">
+            <!-- Dots will be populated here by JavaScript -->
+        </div>
+    </div>
+</div>
+
+<script>
+    // =========================================================================
+    // STEP 1: CONFIGURATION & STATE
+    // =========================================================================
+    
+    // Base directory where your Quick Draw data files are now located.
+    // NOTE: This relative path assumes the 'quick_draw_local' folder is in the same directory as this index.html file.
+    const BASE_PATH = './quick_draw_local/';
+
+    // File paths are updated to match the casing and naming conventions seen in your local file list screenshot.
+    const FILE_PATHS = {
+        // Flora Files
+        flower: BASE_PATH + 'flower_data_local.ndjson',
+        tree: BASE_PATH + 'tree_data_local.ndjson', 
+        grass: BASE_PATH + 'Grass_data_local.ndjson', 
+
+        // Fauna Files (based on files in your folder)
+        bear: BASE_PATH + 'Bear_data_local.ndjson',
+        lion: BASE_PATH + 'Lion_data_local.ndjson',
+        bird: BASE_PATH + 'Bird Data_data_local.ndjson',
+        monkey: BASE_PATH + 'Monkey_data_local.ndjson',
+        crocodile: BASE_PATH + 'Crocodile_data_local.ndjson',
+        giraffe: BASE_PATH + 'Giraffe_data_local.ndjson',
+        zebra: BASE_PATH + 'Zebra_data_local.ndjson',
+        snake: BASE_PATH + 'Snake_data_local.ndjson',
+        tiger: BASE_PATH + 'Tiger_data_local.ndjson',
+    };
+    
+    // Group definitions for randomization
+    const FLORA_CATEGORIES = ['flower', 'tree', 'grass'];
+    const FAUNA_CATEGORIES = ['bear', 'lion', 'bird', 'monkey', 'crocodile', 'giraffe', 'zebra', 'snake', 'tiger'];
+    const ALL_CATEGORIES = [...FLORA_CATEGORIES, ...FAUNA_CATEGORIES];
+
+    // Store all loaded drawings, keyed by category
+    const DRAWING_DATA = {};
+    ALL_CATEGORIES.forEach(cat => DRAWING_DATA[cat] = []); // Initialize all category arrays
+
+    // New state to track which drawing indices have been used for each category
+    const USED_DRAWINGS = {};
+    ALL_CATEGORIES.forEach(cat => USED_DRAWINGS[cat] = new Set());
+
+    let activeGroup = 'flora'; // Initial selected group: 'flora' or 'fauna'
+
+    const GRID_SIZE = 10;
+    const GRID_CONTAINER_ID = 'garden-grid';
+    const DOT_RADIUS = 3; 
+
+    // =========================================================================
+    // STEP 2: UTILITY FUNCTIONS
+    // =========================================================================
+
+    /**
+     * Converts the compressed Quick Draw stroke data (vectors) into an SVG path string.
+     */
+    function drawingToSvgPath(drawing) {
+        let svgContent = '';
+        const scaleFactor = 100 / 256; // Quick Draw data is scaled from 256x256 to our 100x100 viewBox
+
+        drawing.forEach(stroke => {
+            // stroke is an array of [x_coords, y_coords, [time_steps]]
+            const xCoords = stroke[0];
+            const yCoords = stroke[1];
+
+            let pathData = '';
+            for (let i = 0; i < xCoords.length; i++) {
+                const x = xCoords[i] * scaleFactor;
+                const y = yCoords[i] * scaleFactor;
+
+                if (i === 0) {
+                    // Move to the start of the stroke
+                    pathData += `M${x},${y}`;
+                } else {
+                    // Line to the next point
+                    pathData += `L${x},${y}`;
+                }
+            }
+            // Use a class "flower-stroke" to select paths for animation
+            svgContent += `<path class="flower-stroke" d="${pathData}"/>`;
+        });
+
+        // Wrap paths in a group element for easier styling
+        return `<g class="flower-container">${svgContent}</g>`;
+    }
+
+    /**
+     * Parses the NDJSON string and populates the DRAWING_DATA array for the given category.
+     * @param {string} ndjsonData The raw text content of the NDJSON file.
+     * @param {string} category The category key (e.g., 'flower', 'tree', 'lion').
+     */
+    function processData(ndjsonData, category) {
+        if (!ndjsonData || !ndjsonData.trim()) {
+            console.error(`NDJSON data for ${category} is empty or invalid after loading.`);
+            return;
+        }
+
+        const lines = ndjsonData.trim().split('\n');
+        
+        const drawings = lines.map(line => {
+            try {
+                const data = JSON.parse(line);
+                return data.drawing; 
+            } catch (e) {
+                return null;
+            }
+        }).filter(drawing => drawing !== null);
+
+        DRAWING_DATA[category] = drawings;
+
+        if (drawings.length === 0) {
+            console.warn(`No valid ${category} drawings found in the dataset.`);
+        }
+        console.log(`Loaded ${drawings.length} valid ${category} drawings.`);
+    }
+
+    /**
+     * Loads the Quick Draw data asynchronously for a specific category.
+     */
+    async function loadData(category) {
+        const filePath = FILE_PATHS[category];
+        console.log(`Attempting to load data for ${category} from ${filePath}...`);
+        
+        try {
+            // Implement simple exponential backoff for robust file loading
+            const maxRetries = 3;
+            let response = null;
+            
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    response = await fetch(filePath);
+                    if (response.ok) {
+                        break; // Success!
+                    }
+                } catch (e) {
+                    // Network error, try again after a delay
+                }
+
+                if (i < maxRetries - 1) {
+                    const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s delay
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+
+            if (!response || !response.ok) {
+                // If the loop finished without a successful response
+                if (response && response.status === 404) {
+                    console.error(`File not found: '${filePath}'. Ensure the filename (case/spaces/extension) is EXACTLY correct and the path is valid.`);
+                } else if (response) {
+                    throw new Error(`HTTP error! Status: ${response.status} for ${category}.`);
+                } else {
+                    throw new Error(`Network or Fetch error for ${category}.`);
+                }
+            }
+
+            const textData = await response.text();
+            processData(textData, category);
+            
+        } catch (error) {
+            console.error(`Failed to load Quick Draw data for ${category}:`, error);
+        }
+    }
+
+    /**
+     * Updates the UI to reflect the currently selected drawing group.
+     */
+    function updateCategoryDisplay() {
+        // Update tab styling
+        document.getElementById('tab-flora').classList.remove('tab-active');
+        document.getElementById('tab-fauna').classList.remove('tab-active');
+        document.getElementById(`tab-${activeGroup}`).classList.add('tab-active');
+        
+        // Update subtitle text
+        const subtitle = document.getElementById('garden-subtitle');
+        if (subtitle) {
+            const displayGroup = activeGroup.charAt(0).toUpperCase() + activeGroup.slice(1);
+            subtitle.textContent = `You are now adding more: ${displayGroup}`;
+        }
+    }
+
+    /**
+     * Changes the currently active drawing group (Flora or Fauna).
+     * This function is globally accessible via onclick in the HTML.
+     */
+    window.changeGroup = function(newGroup) {
+        activeGroup = newGroup;
+        updateCategoryDisplay();
+        console.log(`Active planting group changed to: ${activeGroup}`);
+    }
+
+
+    /**
+     * Handles the click event on a dot, replacing it with a random drawing
+     * selected from the currently active group, ensuring no duplicates.
+     */
+    function handleDotClick(event) {
+        const svgElement = event.currentTarget;
+        
+        if (svgElement.dataset.planted) {
+            return;
+        }
+        
+        // 1. Determine which set of categories to use
+        const categoriesInGroup = activeGroup === 'flora' ? FLORA_CATEGORIES : FAUNA_CATEGORIES;
+        
+        // 2. Filter out categories that failed to load (or have no drawings)
+        const loadedCategories = categoriesInGroup.filter(cat => DRAWING_DATA[cat] && DRAWING_DATA[cat].length > 0);
+
+        if (loadedCategories.length === 0) {
+            console.error(`No drawings loaded for the active group: ${activeGroup}. Please check your files.`);
+            return;
+        }
+
+        // 3. Select a random loaded category within the active group
+        const randomCategoryIndex = Math.floor(Math.random() * loadedCategories.length);
+        const selectedCategory = loadedCategories[randomCategoryIndex];
+        
+        // 4. Get drawings and used indices for the selected category
+        const availableDrawings = DRAWING_DATA[selectedCategory];
+        const usedIndices = USED_DRAWINGS[selectedCategory];
+
+        // 5. Check for available unique drawings
+        const totalDrawings = availableDrawings.length;
+        if (usedIndices.size >= totalDrawings) {
+            console.warn(`All unique drawings for category '${selectedCategory}' have been used. Cannot plant a unique item.`);
+            // Optionally, you could reset the used indices here, or just stop planting.
+            return;
+        }
+        
+        // 6. Find a random *unused* index
+        let randomIndex;
+        do {
+            randomIndex = Math.floor(Math.random() * totalDrawings);
+        } while (usedIndices.has(randomIndex));
+
+        // 7. Mark this index as used
+        usedIndices.add(randomIndex);
+
+        // 8. Select the drawing and proceed
+        const rawDrawing = availableDrawings[randomIndex];
+        
+        // 9. Convert raw drawing data to SVG path content and replace the dot
+        const flowerSvgContent = drawingToSvgPath(rawDrawing);
+        
+        while (svgElement.firstChild) {
+            svgElement.removeChild(svgElement.firstChild);
+        }
+        svgElement.innerHTML = flowerSvgContent;
+        svgElement.dataset.planted = 'true';
+        svgElement.classList.remove('dot-svg', 'cursor-pointer');
+        svgElement.classList.add('flower-svg');
+        svgElement.removeEventListener('click', handleDotClick);
+
+        // 10. ANIMATION LOGIC: Draw the strokes sequentially
+        const paths = svgElement.querySelectorAll('.flower-stroke');
+        let delay = 0;
+        const delayIncrement = 300; // Delay between strokes
+
+        paths.forEach(path => {
+            if (typeof path.getTotalLength === 'function') {
+                const length = path.getTotalLength();
+                path.style.strokeDasharray = length + ' ' + length;
+                path.style.strokeDashoffset = length;
+
+                setTimeout(() => {
+                    path.style.strokeDashoffset = '0';
+                }, delay);
+                
+                delay += delayIncrement;
+            } else {
+                console.warn("Path element does not support getTotalLength for animation.");
+            }
+        });
+    }
+
+    // =========================================================================
+    // STEP 3: INITIALIZATION
+    // =========================================================================
+
+    /**
+     * Initializes the 10x10 grid with clickable dots, then loads the data.
+     */
+    async function initializeGrid() {
+        const gridContainer = document.getElementById(GRID_CONTAINER_ID);
+        gridContainer.innerHTML = ''; 
+
+        // A. Initial setup of the empty grid
+        for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'w-full h-full flex items-center justify-center';
+
+            const dotSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            dotSvg.setAttribute('viewBox', '0 0 100 100');
+            dotSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            dotSvg.classList.add('w-full', 'h-full', 'dot-svg', 'cursor-pointer');
+
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute('cx', '50');
+            circle.setAttribute('cy', '50');
+            circle.setAttribute('r', DOT_RADIUS);
+            dotSvg.appendChild(circle);
+
+            dotSvg.addEventListener('click', handleDotClick);
+
+            cell.appendChild(dotSvg);
+            gridContainer.appendChild(cell);
+        }
+        
+        // B. Update initial display
+        updateCategoryDisplay();
+
+        // C. Load and process data asynchronously for all categories
+        // Uses Promise.all to wait for all files to attempt loading
+        await Promise.all(
+            ALL_CATEGORIES.map(category => loadData(category))
+        );
+        
+        console.log("All data loading attempts complete.");
+    }
+
+    // Initialize the grid when the page loads
+    window.onload = initializeGrid;
+</script>
+
+</body>
+</html>

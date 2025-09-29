@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Every Second Timeline</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the 3D effect */
+        body {
+            /* Now using 100vh for a fixed, non-scrolling view */
+            height: 100vh; 
+            overflow: hidden; /* Prevent all scrolling */
+            background-color: #f7f7f7; 
+            color: #1f2937; 
+        }
+        
+        #timeline-scene {
+            /* Establish 3D space and perspective */
+            perspective: 1600px; 
+            overflow: hidden;
+            display: flex;
+            /* Center the strip vertically and horizontally */
+            justify-content: center; 
+            align-items: center; 
+            height: 100%;
+            padding-top: 50px; 
+        }
+
+        #timeline-strip {
+            /* Apply the transformation to create the receding, angled effect */
+            transform-style: preserve-3d;
+            
+            /* Center the entire structure, use a steep 45deg tilt */
+            /* This tilt creates the "looking down the long column" effect */
+            transform: rotateX(45deg) rotateZ(5deg) scale(1) translateY(0);
+            
+            /* Remove scroll transition */
+            transition: none; 
+            
+            /* Blocks are positioned absolutely relative to this center point */
+            position: relative;
+            width: 0; 
+            height: 0;
+        }
+
+        .thumbnail-block {
+            /* Block size: Adjusted for better perspective */
+            width: 70px; 
+            height: 45px; 
+            min-width: 70px;
+            background-color: #ffffff; 
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            
+            /* Absolute positioning relative to the center of #timeline-strip */
+            position: absolute; 
+            top: 0;
+            left: 0;
+            
+            /* Removed margin-right as positioning is now done via translate in JS */
+            margin: 0; 
+            
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            overflow: hidden; 
+            
+            /* Initial 3D depth separation - key for the layered effect */
+            transform-origin: bottom center;
+            
+            /* Transform set in JS: translateZ() + translateX() */
+            transform: translateZ(0px); 
+        }
+
+        .thumbnail-block img {
+            /* Enforce 16:9 aspect ratio *visually* by covering the block area */
+            width: 100%;
+            height: 100%;
+            object-fit: cover; 
+            display: block;
+        }
+
+        /* Hover effect to bring the blocks forward and highlight them */
+        .thumbnail-block:hover {
+            /* Move forward (translateZ), scale up, and ensure no unwanted rotation */
+            transform: translateZ(100px) scale(1.6) rotateX(0deg); 
+            box-shadow: 0 10px 30px rgba(74, 222, 128, 0.6);
+            z-index: 100;
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 768px) {
+            #timeline-scene {
+                perspective: 800px;
+            }
+            #timeline-strip {
+                transform: rotateX(40deg) rotateZ(3deg) scale(0.8) translateY(50px);
+            }
+            .thumbnail-block {
+                width: 45px; 
+                height: 28px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen font-sans">
+
+    <!-- MAIN FIXED CONTAINER: Holds all UI elements and the 3D scene in place -->
+    <div class="fixed w-full h-screen top-0 left-0">
+        
+        <!-- Header and Tags Panel (Left/Right Text Content) -->
+        <div class="absolute top-0 left-0 right-0 p-8 flex justify-between items-start z-20">
+            
+            <!-- Top Left Date/Time -->
+            <div class="text-xs tracking-wider text-gray-400">
+                <p id="current-date">May 28, 2018</p>
+                <p id="current-time" class="text-gray-800 font-semibold text-lg">08:45:34</p>
+            </div>
+            
+            <!-- Top Center Title -->
+            <div class="text-sm font-light uppercase tracking-widest text-gray-500">
+                every : second
+            </div>
+            
+            <!-- Tags Panel (Right Side) -->
+            <div class="hidden md:block w-32 space-y-2 text-right">
+                <div class="text-xs font-semibold text-gray-600 cursor-pointer hover:text-gray-900 transition-colors">all <span class="text-gray-400">»</span></div>
+                <div class="text-xs text-gray-400 cursor-pointer hover:text-gray-800 transition-colors">today <span class="text-gray-300">»</span></div>
+                <div class="text-xs text-gray-400 cursor-pointer hover:text-gray-800 transition-colors">houston <span class="text-gray-300">»</span></div>
+                <div class="text-xs text-gray-400 cursor-pointer hover:text-gray-800 transition-colors">london <span class="text-gray-300">»</span></div>
+                <div class="text-xs text-gray-400 cursor-pointer hover:text-gray-800 transition-colors">games <span class="text-gray-300">»</span></div>
+                <div class="text-xs text-gray-400 cursor-pointer hover:text-gray-800 transition-colors">politics <span class="text-gray-300">»</span></div>
+                <!-- Controls/Icons -->
+                <div class="pt-4 flex justify-end space-x-3 text-gray-500">
+                    <!-- Placeholder icon 1 (Square) -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 cursor-pointer hover:text-gray-900 transition-colors" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v2a1 1 0 10-2 0V4a1 1 0 011-1zm0 14a1 1 0 01-1-1v-2a1 1 0 102 0v2a1 1 0 01-1 1zM3 10a1 1 0 011-1h2a1 1 0 100-2H4a1 1 0 01-1-1zm14 0a1 1 0 01-1-1h-2a1 1 0 100 2h2a1 1 0 011-1zM6 6a1 1 0 011-1h2a1 1 0 100-2H7a3 3 0 00-3 3v2a1 1 0 102 0V7a1 1 0 011-1zM13 13a1 1 0 011-1h2a1 1 0 100-2h-2a3 3 0 00-3 3v2a1 1 0 102 0v-2a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    <!-- Placeholder icon 2 (Question mark) -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 cursor-pointer hover:text-gray-900 transition-colors" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 12a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 00-2 0v4a1 1 0 102 0V7z"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D Timeline Visualization Scene (Fixed in Viewport) -->
+        <div id="timeline-scene" class="w-full h-full">
+            <div id="timeline-strip">
+                <!-- Thumbnails will be injected here by JavaScript -->
+            </div>
+        </div>
+        
+    </div>
+
+    <script>
+        const timelineStrip = document.getElementById('timeline-strip');
+        const numThumbnails = 100; // Using the 100 images from the previous context
+        
+        // Removed halfCount as we are now using a single long stack.
+
+        // Variables for spacing and positioning
+        let BLOCK_WIDTH = 70; 
+        const Z_STEP = 5; // Z separation for the stacked "bookshelf" effect
+        const X_STEP = 5; // Horizontal offset for the receding column effect
+
+        /**
+         * Generates a random time string in HH:MM:SS format (e.g., 08:45:34).
+         * @returns {string} The formatted time string.
+         */
+        function getRandomTime() {
+            const h = String(Math.floor(Math.random() * 24)).padStart(2, '0');
+            const m = String(Math.floor(Math.random() * 60)).padStart(2, '0');
+            const s = String(Math.floor(Math.random() * 60)).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        /**
+         * Generates the timeline blocks using image tags and the thumbnail URLs.
+         */
+        function generateTimelineBlocks() {
+            // Clear existing blocks
+            timelineStrip.innerHTML = '';
+            
+            // Recalculate block dimensions for responsiveness on smaller screens
+            if (window.innerWidth <= 768) {
+                BLOCK_WIDTH = 45;
+            } else {
+                BLOCK_WIDTH = 70;
+            }
+            
+            for (let i = 0; i < numThumbnails; i++) {
+                const block = document.createElement('div');
+                block.className = 'thumbnail-block';
+                
+                // Use the image URL from the previous breakout app context
+                const imageUrl = `youtube_thumbnails/${i + 1}_thumbnail.jpg`;
+                
+                const img = document.createElement('img');
+                img.src = imageUrl;
+                img.alt = `Thumbnail ${i + 1}`;
+                
+                // Fallback for missing images
+                img.onerror = function() {
+                    block.style.backgroundColor = '#ddd';
+                    block.innerHTML = `<span class="text-[8px] p-1 text-center text-gray-500">No Image ${i+1}</span>`;
+                };
+                
+                block.title = `Artifact ID: ${i + 1}`;
+                block.appendChild(img);
+                
+                // --- Single Long Stack Positioning Logic ---
+                
+                // Z position (depth) - stacks them back
+                const zTranslation = i * Z_STEP;
+                
+                // X position (horizontal offset) - shifts the block slightly right 
+                // as it recedes, creating the long isometric column appearance.
+                const xShift = i * X_STEP;
+                
+                // Combine Z and X translation. No rotation (rotateY) is applied to the individual blocks.
+                let transformValue = `translateZ(-${zTranslation}px) translateX(${xShift}px)`;
+                
+                block.style.transform = transformValue;
+                
+                // Set z-index for visual stacking order (closer objects higher)
+                block.style.zIndex = numThumbnails - i;
+                
+                timelineStrip.appendChild(block);
+            }
+        }
+
+        /**
+         * Sets the current date and time on the UI.
+         */
+        function updateDate() {
+            const dateElement = document.getElementById('current-date');
+            const timeElement = document.getElementById('current-time');
+            
+            const now = new Date();
+            const options = { month: 'long', day: 'numeric', year: 'numeric' };
+            const formattedDate = now.toLocaleDateString('en-US', options);
+            dateElement.textContent = formattedDate;
+
+            // Set the random time (for visualization aesthetics)
+            timeElement.textContent = getRandomTime();
+        }
+
+        // --- Initialization and Event Listeners ---
+        
+        // Setup function to run on load and resize
+        function initialize() {
+            generateTimelineBlocks();
+            updateDate();
+        }
+
+        window.addEventListener('resize', initialize);
+
+        // Run on page load
+        initialize();
+    </script>
+</body>
+</html>

@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Musical Breakout Assembly</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for Game Aesthetics */
+        body {
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; 
+            height: 200vh; 
+            width: 100vw; 
+            margin: 0;
+            padding: 0; 
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+            overflow-x: hidden; 
+            overflow-y: scroll;
+            position: relative;
+        }
+        #gameCanvas {
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+            border: 4px solid #fff;
+            background-color: #000;
+            cursor: none; 
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        /* --- BRIGHTER & ANIMATED SHIMMER EFFECT CSS --- */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .shimmer-overlay {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            
+            /* BRIGHTER GRADIENT: Increased whiteness (0.5) and adjusted blend mode */
+            background: linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0) 0%,
+                rgba(255, 255, 255, 0.5) 50%, 
+                rgba(255, 255, 255, 0) 100%
+            );
+            background-size: 200% 100%;
+            animation: shimmer 5s infinite linear;
+            mix-blend-mode: soft-light; /* Provides a clearer, glowing effect */
+            opacity: 1; /* Managed by JS/transition progress */
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" class="rounded-xl"></canvas>
+
+    <div id="shimmerContainer" style="position: fixed; top: 0; left: 0; pointer-events: none;"></div>
+
+    <script>
+        // --- Setup Constants and Variables ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let CANVAS_WIDTH;
+        let CANVAS_HEIGHT;
+
+        let score = 0;
+        let lives = 3;
+        let gameState = 'START_SCROLL';
+        let gameActive = true;
+        let audioUnlocked = false; // NEW FLAG
+
+        // Ball Properties
+        let ball = {
+            x: 0, y: 0, radius: 8, dx: 0, dy: 0, color: '#ffffff',
+            originalDx: 3, originalDy: -3
+        };
+
+        // Paddle Properties
+        let paddle = {
+            height: 10, width: 100, originalWidth: 100, x: 0, 
+            color: '#fff', speed: 10
+        };
+
+        // Power-up Properties
+        const POWERUP_WIDTH = 20;
+        const POWERUP_HEIGHT = 10;
+        const POWERUP_SPEED = 2;
+        let powerups = []; 
+
+        // Brick Properties 
+        const BRICK_TOTAL_IMAGES = 100;
+        const ASPECT_RATIO_W_H = 16 / 9;
+        const BRICK_PADDING = 5;
+        const BRICK_OFFSET_TOP = 40;
+        const BRICK_OFFSET_LEFT = 40;
+        const BRICK_START_COLUMNS = 10;
+        const BRICK_START_SPACING = 10;
+        const SPECIAL_BRICK_COUNT = 10;
+
+        let BRICK_COLUMN_COUNT;
+        let BRICK_ROW_COUNT;
+        let BRICK_WIDTH;
+        let BRICK_HEIGHT;
+        const BRICK_SCORE_VALUE = 50; 
+
+        let bricks = [];
+        let originalImages = [];
+        let tintedImageCanvases = [];
+        let audioFiles = []; // Array to hold Audio objects
+
+        const TINT_COLORS = [
+            'rgba(255, 69, 0, 0.7)', 'rgba(255, 165, 0, 0.7)', 'rgba(255, 255, 0, 0.7)',   
+            'rgba(60, 179, 113, 0.7)', 'rgba(65, 105, 225, 0.7)', 'rgba(0, 255, 255, 0.7)',   
+            'rgba(148, 0, 211, 0.7)', 'rgba(255, 0, 127, 0.7)', 'rgba(255, 99, 71, 0.7)',   
+            'rgba(127, 255, 212, 0.7)'  
+        ];
+
+        // --- Transition Variables ---
+        let transitionProgress = 0;
+        const TRANSITION_SPEED = 0.01; 
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        // --- Core Functions ---
+
+        /**
+         * Loads all special audio files using the corrected nested path.
+         */
+        function loadAudioFiles() {
+            for (let i = 1; i <= SPECIAL_BRICK_COUNT; i++) {
+                // CORRECTED PATH: youtube_thumbnails/sounds/
+                const audio = new Audio(`youtube_thumbnails/sounds/${i}_song.mp3`);
+                audio.volume = 0.5;
+                audio.load(); // Ensure loading starts immediately
+
+                audio.onerror = () => {
+                    console.warn(`[Audio Warning] Could not load song: youtube_thumbnails/sounds/${i}_song.mp3. Check file path/existence!`);
+                    audioFiles[i - 1] = null; 
+                };
+                audioFiles[i - 1] = audio;
+            }
+        }
+        
+        /**
+         * NEW: Creates a temporary AudioContext and starts a dummy sound 
+         * to unlock web audio playback after the first user interaction.
+         */
+        function initAudio() {
+            if (audioUnlocked) return;
+            
+            try {
+                // For modern browsers that use AudioContext
+                let context = new (window.AudioContext || window.webkitAudioContext)();
+                if (context.state === 'suspended') {
+                    context.resume();
+                    console.log("[Audio] AudioContext resumed by user interaction.");
+                }
+
+                // Play a silent sound on an HTML audio element as well, just in case
+                const silentAudio = new Audio();
+                silentAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAABAAAADFRFTkMAAAAADEV4cHJlc3MgV2ViAAT/8Q==' // Tiny silent MP3 data URI
+                silentAudio.play().catch(() => {});
+
+                audioUnlocked = true;
+                
+            } catch (e) {
+                console.warn("[Audio] Could not create/resume AudioContext. Relying solely on HTML audio elements.");
+                audioUnlocked = true; // Still mark as attempted
+            }
+        }
+
+
+        function setupGameDimensions() {
+            CANVAS_WIDTH = window.innerWidth;
+            CANVAS_HEIGHT = window.innerHeight; 
+
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+
+            // Final grid dimensions calculation
+            const availableWidth = CANVAS_WIDTH - (BRICK_OFFSET_LEFT * 2);
+            const BRICK_MIN_WIDTH = 60; 
+            let desiredColumns = 10; 
+            
+            for (let N = 20; N >= 1; N--) {
+                const totalPadding = BRICK_PADDING * (N - 1);
+                const trialWidth = (availableWidth - totalPadding) / N;
+                if (trialWidth >= BRICK_MIN_WIDTH) {
+                    desiredColumns = N;
+                    break;
+                }
+            }
+            BRICK_COLUMN_COUNT = desiredColumns;
+            BRICK_WIDTH = (availableWidth - (BRICK_PADDING * (BRICK_COLUMN_COUNT - 1))) / BRICK_COLUMN_COUNT;
+            BRICK_HEIGHT = BRICK_WIDTH / ASPECT_RATIO_W_H;
+            BRICK_ROW_COUNT = Math.ceil(BRICK_TOTAL_IMAGES / BRICK_COLUMN_COUNT);
+
+            resetBallAndPaddle(true);
+        }
+
+        function resetBallAndPaddle(fullReset = false) {
+            paddle.x = (CANVAS_WIDTH - paddle.width) / 2;
+            ball.x = CANVAS_WIDTH / 2;
+            ball.y = CANVAS_HEIGHT - paddle.height - 10 - 30;
+            
+            if (!fullReset) {
+                if (gameState === 'PLAYING') {
+                    ball.dx = ball.originalDx;
+                    ball.dy = ball.originalDy;
+                } else {
+                    ball.dx = 0;
+                    ball.dy = 0;
+                }
+                paddle.width = paddle.originalWidth;
+                powerups = [];
+            } else {
+                ball.dx = 0; 
+                ball.dy = 0;
+            }
+        }
+        
+        function resetGame() {
+            lives = 3;
+            score = 0;
+            gameState = 'PLAYING';
+            setupBricks(true);
+            resetBallAndPaddle();
+        }
+
+        function loadOriginalImages() { 
+            return new Promise(resolve => {
+                let loadPromises = [];
+                for (let i = 1; i <= BRICK_TOTAL_IMAGES; i++) {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous'; 
+                    const promise = new Promise(innerResolve => {
+                        img.onload = () => { originalImages[i - 1] = img; innerResolve(); };
+                        img.onerror = () => { originalImages[i - 1] = null; innerResolve(); };
+                        img.src = `youtube_thumbnails/${i}_thumbnail.jpg`;
+                    });
+                    loadPromises.push(promise);
+                }
+                Promise.all(loadPromises).then(() => { resolve(); });
+            });
+        }
+        
+        function generateTintedCanvases() {
+            tintedImageCanvases = [];
+            for (let i = 0; i < BRICK_TOTAL_IMAGES; i++) {
+                const rowIndex = Math.floor(i / BRICK_COLUMN_COUNT); 
+                const tintColor = TINT_COLORS[rowIndex % TINT_COLORS.length];
+                const img = originalImages[i];
+
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = BRICK_WIDTH;
+                tempCanvas.height = BRICK_HEIGHT;
+                const tempCtx = tempCanvas.getContext('2d');
+
+                if (img) {
+                    tempCtx.drawImage(img, 0, 0, BRICK_WIDTH, BRICK_HEIGHT);
+                    tempCtx.globalCompositeOperation = 'multiply';
+                    tempCtx.fillStyle = tintColor;
+                    tempCtx.fillRect(0, 0, BRICK_WIDTH, BRICK_HEIGHT);
+                    tempCtx.globalCompositeOperation = 'source-over';
+                } else {
+                    const fallbackTint = tintColor.replace('0.7', '1');
+                    tempCtx.fillStyle = fallbackTint;
+                    tempCtx.fillRect(0, 0, BRICK_WIDTH, BRICK_HEIGHT);
+                }
+                tintedImageCanvases[i] = tempCanvas;
+            }
+        }
+
+        // Fisher-Yates shuffle function
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        /**
+         * Creates bricks, marks the special ones, and shuffles the list before placement.
+         */
+        function setupBricks(resetStatus = false) {
+            const oldBricks = bricks; 
+            let flatBricks = []; 
+
+            // 1. Create a list of all potential bricks
+            for (let i = 0; i < BRICK_TOTAL_IMAGES; i++) {
+                const isSpecial = i < SPECIAL_BRICK_COUNT;
+                const initialRow = Math.floor(i / BRICK_START_COLUMNS);
+                const initialCol = i % BRICK_START_COLUMNS;
+                
+                // Pre-calculate large initial positions (for the transition animation)
+                const scaledWidth = CANVAS_WIDTH * 0.9;
+                const largeBrickWidth = (scaledWidth - (BRICK_START_SPACING * (BRICK_START_COLUMNS - 1))) / BRICK_START_COLUMNS;
+                const largeBrickHeight = largeBrickWidth / ASPECT_RATIO_W_H;
+                const totalDisplayWidth = (largeBrickWidth * BRICK_START_COLUMNS) + (BRICK_START_SPACING * (BRICK_START_COLUMNS - 1));
+                const totalDisplayHeight = (largeBrickHeight * Math.ceil(BRICK_TOTAL_IMAGES / BRICK_START_COLUMNS)) + (BRICK_START_SPACING * (Math.ceil(BRICK_TOTAL_IMAGES / BRICK_START_COLUMNS) - 1));
+                const startX = (CANVAS_WIDTH - totalDisplayWidth) / 2;
+                const startY = (CANVAS_HEIGHT - totalDisplayHeight) / 2;
+                
+                const initialX = startX + (initialCol * (largeBrickWidth + BRICK_START_SPACING));
+                const initialY = startY + (initialRow * (largeBrickHeight + BRICK_START_SPACING));
+
+                flatBricks.push({
+                    initialX: initialX, initialY: initialY,
+                    initialWidth: largeBrickWidth, initialHeight: largeBrickHeight,
+                    imageCanvas: tintedImageCanvases[i],
+                    originalImage: originalImages[i],
+                    isSpecial: isSpecial, 
+                    audioIndex: isSpecial ? i : -1, // Store the audio index (0-9)
+                    status: 1, // Will be 1 on reset
+                });
+            }
+
+            // 2. SHUFFLE the brick list to randomize placement of special tiles
+            shuffle(flatBricks); 
+
+            // 3. Place the shuffled bricks into the 2D grid structure
+            bricks = [];
+            for (let r = 0; r < BRICK_ROW_COUNT; r++) {
+                bricks[r] = [];
+                for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
+                    const flatIndex = r * BRICK_COLUMN_COUNT + c;
+                    
+                    if (flatIndex >= BRICK_TOTAL_IMAGES) {
+                        break;
+                    }
+                    
+                    const brick = flatBricks[flatIndex];
+                    
+                    // Calculate final positions
+                    brick.x = (c * (BRICK_WIDTH + BRICK_PADDING)) + BRICK_OFFSET_LEFT;
+                    brick.y = (r * (BRICK_HEIGHT + BRICK_PADDING)) + BRICK_OFFSET_TOP;
+                    brick.width = BRICK_WIDTH;
+                    brick.height = BRICK_HEIGHT;
+
+                    // Preserve status from previous game if it exists and we're not fully resetting
+                    const oldBrick = oldBricks[r]?.[c];
+                    if (!resetStatus && oldBrick) {
+                        brick.status = oldBrick.status;
+                    }
+
+                    bricks[r][c] = brick;
+                }
+            }
+        }
+
+        // --- Drawing and Animation ---
+
+        /**
+         * Creates/updates the DOM elements for the shimmering effect.
+         */
+        function updateShimmerOverlay(progress) {
+            const container = document.getElementById('shimmerContainer');
+            container.innerHTML = '';
+            
+            for (let r = 0; r < BRICK_ROW_COUNT; r++) {
+                for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
+                    const brick = bricks[r][c];
+                    
+                    // Only apply shimmer if it's a special brick AND it's active (status=1)
+                    if (brick && brick.status === 1 && brick.isSpecial) {
+                        // Interpolate position based on progress
+                        const currentX = lerp(brick.initialX, brick.x, progress);
+                        const currentY = lerp(brick.initialY, brick.y, progress);
+                        const currentW = lerp(brick.initialWidth, brick.width, progress);
+                        const currentH = lerp(brick.initialHeight, brick.height, progress);
+
+                        const shimmerDiv = document.createElement('div');
+                        shimmerDiv.className = 'shimmer-overlay';
+                        shimmerDiv.style.position = 'absolute';
+                        shimmerDiv.style.left = `${currentX}px`;
+                        shimmerDiv.style.top = `${currentY}px`;
+                        shimmerDiv.style.width = `${currentW}px`;
+                        shimmerDiv.style.height = `${currentH}px`;
+                        shimmerDiv.style.overflow = 'hidden'; 
+                        
+                        // Shimmer opacity is 1 in PLAYING state, fades in during transition
+                        const opacity = (gameState === 'PLAYING') ? 1 : progress;
+                        shimmerDiv.style.opacity = `${opacity}`;
+
+                        container.appendChild(shimmerDiv);
+                    }
+                }
+            }
+        }
+
+        function drawBricks() {
+            for (let r = 0; r < BRICK_ROW_COUNT; r++) {
+                for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
+                    const brick = bricks[r][c];
+                    if (brick && brick.status === 1) { 
+                        ctx.drawImage(brick.imageCanvas, brick.x, brick.y, brick.width, brick.height);
+                        ctx.strokeStyle = '#00000033'; 
+                        ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+                    }
+                }
+            }
+        }
+        
+        function drawBrickTransition(progress) {
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Draw prompt text
+            ctx.globalAlpha = 1 - progress; 
+            ctx.font = "bold 32px Inter, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#fff";
+            ctx.fillText("", CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60);
+            ctx.font = "20px Inter, sans-serif";
+            ctx.fillStyle = "#ccc";
+            ctx.fillText("", CANVAS_WIDTH / 2, CANVAS_HEIGHT - 25);
+            ctx.globalAlpha = 1;
+
+            for (let r = 0; r < BRICK_ROW_COUNT; r++) {
+                for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
+                    const brick = bricks[r][c];
+                    if (brick && brick.status === 1) {
+
+                        const currentX = lerp(brick.initialX, brick.x, progress);
+                        const currentY = lerp(brick.initialY, brick.y, progress);
+                        const currentW = lerp(brick.initialWidth, brick.width, progress);
+                        const currentH = lerp(brick.initialHeight, brick.height, progress);
+
+                        if (brick.originalImage) {
+                            ctx.globalAlpha = 1 - progress;
+                            ctx.drawImage(brick.originalImage, currentX, currentY, currentW, currentH);
+                        }
+                        
+                        ctx.globalAlpha = progress;
+                        ctx.drawImage(brick.imageCanvas, currentX, currentY, currentW, currentH);
+
+                        ctx.globalAlpha = 1;
+                        ctx.strokeStyle = '#FFFFFF11';
+                        ctx.strokeRect(currentX, currentY, currentW, currentH);
+                    }
+                }
+            }
+            ctx.globalAlpha = 1; 
+        }
+
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            ctx.closePath();
+        }
+        function drawPaddle() {
+            ctx.fillStyle = paddle.color;
+            const paddleY = CANVAS_HEIGHT - paddle.height - 10;
+            ctx.fillRect(paddle.x, paddleY, paddle.width, paddle.height);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(paddle.x, paddleY, paddle.width, paddle.height);
+        }
+        function drawHUD() {
+            ctx.font = "20px Inter, sans-serif";
+            ctx.fillStyle = "#fff";
+            ctx.textAlign = "left";
+            ctx.fillText(`SCORE: ${score}`, 20, 30);
+            ctx.textAlign = "right";
+            ctx.fillText(`LIVES: ${lives}`, CANVAS_WIDTH - 20, 30);
+        }
+        function drawOverlay() {
+            if (gameState === 'PLAYING' || gameState === 'START_SCROLL' || gameState === 'TRANSITIONING') return;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            ctx.font = "bold 48px Inter, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#fff";
+
+            let message = (gameState === 'LOSE') ? "GAME OVER!" : "YOU WIN!";
+            let subMessage = (gameState === 'LOSE') ? `Final Score: ${score}. Click or tap to restart!` : `Congratulations! Score: ${score}. Click or tap to play again!`;
+
+            ctx.fillText(message, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
+            ctx.font = "20px Inter, sans-serif";
+            ctx.fillStyle = "#ccc";
+            ctx.fillText(subMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+        }
+        function drawPowerUps() {
+            powerups.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(p.x, p.y, p.width, p.height);
+            });
+        }
+
+
+        // --- Physics/Update Functions ---
+
+        function updateTransition() {
+            transitionProgress += TRANSITION_SPEED; 
+            transitionProgress = Math.min(1, transitionProgress);
+
+            updateShimmerOverlay(transitionProgress);
+
+            if (transitionProgress >= 1) {
+                gameState = 'PLAYING';
+                ball.dx = ball.originalDx;
+                ball.dy = ball.originalDy;
+            }
+        }
+        
+        function createPowerUp(x, y) {
+            if (Math.random() < 0.1) {
+                powerups.push({
+                    x: x + BRICK_WIDTH/2 - POWERUP_WIDTH/2, y: y, width: POWERUP_WIDTH, height: POWERUP_HEIGHT,
+                    dy: POWERUP_SPEED, type: 'ENLARGE_PADDLE', color: '#FFD700'
+                });
+            }
+        }
+
+        function applyPowerUp(type) {
+            if (type === 'ENLARGE_PADDLE') {
+                paddle.width = paddle.originalWidth * 1.5;
+                if (paddle.timeout) clearTimeout(paddle.timeout); 
+                paddle.timeout = setTimeout(() => {
+                    paddle.width = paddle.originalWidth;
+                }, 8000);
+            }
+        }
+        function updatePowerUps() {
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                const p = powerups[i];
+                p.y += p.dy;
+                const paddleY = CANVAS_HEIGHT - paddle.height - 10;
+                if (p.y + p.height > paddleY && p.x + p.width > paddle.x && p.x < paddle.x + paddle.width) {
+                    applyPowerUp(p.type);
+                    powerups.splice(i, 1);
+                    continue; 
+                }
+                if (p.y > CANVAS_HEIGHT) {
+                    powerups.splice(i, 1);
+                }
+            }
+        }
+        
+        /**
+         * Check collision and safely try to play music using the stored audioIndex.
+         */
+        function checkBrickCollision() {
+            let totalBricksDestroyed = 0;
+            for (let r = 0; r < BRICK_ROW_COUNT; r++) {
+                for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
+                    const brick = bricks[r][c];
+                    if (brick && brick.status === 1) {
+                        
+                        if (ball.x + ball.radius > brick.x && ball.x - ball.radius < brick.x + brick.width &&
+                            ball.y + ball.radius > brick.y && ball.y - ball.radius < brick.y + brick.height) {
+                            
+                            ball.dy = -ball.dy;
+                            brick.status = 0; 
+                            score += BRICK_SCORE_VALUE; 
+                            
+                            // Safely check and play music using the stored audioIndex
+                            if (brick.isSpecial && brick.audioIndex !== -1) {
+                                const audio = audioFiles[brick.audioIndex];
+                                if (audio) {
+                                    try {
+                                        // Use cloneNode(true) to allow overlapping sounds and reset time
+                                        audio.currentTime = 0; 
+                                        audio.cloneNode(true).play().catch(e => {
+                                            // This catch is usually hit if the audio is still 'locked'
+                                            console.warn("Audio failed, try clicking/tapping canvas first:", e.message);
+                                        });
+                                    } catch (e) {
+                                        console.error("Error initiating audio playback:", e);
+                                    }
+                                }
+                            }
+
+                            createPowerUp(brick.x, brick.y);
+                        }
+                        
+                        if (brick.status === 1) {
+                            totalBricksDestroyed++; // Count remaining bricks
+                        }
+                    }
+                }
+            }
+
+            // After collision check, update shimmer to remove shattered bricks
+            if (gameState === 'PLAYING') {
+                updateShimmerOverlay(1);
+            }
+
+            if (totalBricksDestroyed === 0) {
+                gameState = 'WIN';
+                ball.dx = 0; ball.dy = 0;
+            }
+        }
+
+        function updateBall() {
+            ball.x += ball.dx; ball.y += ball.dy;
+            if (ball.x + ball.radius > CANVAS_WIDTH || ball.x - ball.radius < 0) { ball.dx = -ball.dx; }
+            if (ball.y - ball.radius < 0) { ball.dy = -ball.dy; }
+            const paddleY = CANVAS_HEIGHT - paddle.height - 10;
+            if (ball.y + ball.radius > paddleY && ball.x > paddle.x && ball.x < paddle.x + paddle.width && ball.y < paddleY + ball.radius) {
+                const relativeIntersectX = (paddle.x + (paddle.width / 2)) - ball.x;
+                const normalizedRelativeIntersectionX = (relativeIntersectX / (paddle.width / 2));
+                ball.dx = -normalizedRelativeIntersectionX * ball.originalDx; 
+                ball.dy = -Math.abs(ball.dy); 
+            }
+            if (ball.y + ball.radius > CANVAS_HEIGHT) {
+                lives--;
+                if (lives > 0) {
+                    resetBallAndPaddle();
+                } else {
+                    gameState = 'LOSE';
+                    ball.dx = 0; ball.dy = 0;
+                }
+            }
+        }
+        function updatePaddle(clientX) {
+            const rect = canvas.getBoundingClientRect();
+            const relativeX = clientX - rect.left;
+            if (relativeX > 0 && relativeX < CANVAS_WIDTH) {
+                paddle.x = relativeX - paddle.width / 2;
+                if (paddle.x < 0) paddle.x = 0;
+                if (paddle.x + paddle.width > CANVAS_WIDTH) paddle.x = CANVAS_WIDTH - paddle.width;
+            }
+        }
+
+
+        // --- Game Loop ---
+        function draw() {
+            if (!gameActive) return;
+
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            if (gameState === 'START_SCROLL') {
+                drawBrickTransition(0);
+                updateShimmerOverlay(0);
+            } else if (gameState === 'TRANSITIONING') {
+                updateTransition();
+                drawBrickTransition(transitionProgress);
+
+            } else if (gameState === 'PLAYING') {
+                drawBricks();
+                drawPaddle();
+                drawBall();
+                drawPowerUps();
+                drawHUD();
+                
+                updateShimmerOverlay(1);
+
+                updateBall();
+                updatePowerUps();
+                checkBrickCollision();
+            } else if (gameState === 'LOSE' || gameState === 'WIN') {
+                drawBricks();
+                drawPaddle();
+                drawBall();
+                drawPowerUps();
+                drawHUD();
+                drawOverlay();
+                document.getElementById('shimmerContainer').innerHTML = '';
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // --- Event Handlers ---
+        
+        // Combined click/touch handler for audio unlock and game reset
+        function handleInteraction(e) {
+            if (!audioUnlocked) {
+                initAudio();
+                // Prevent scrolling after the first touch if audio is being unlocked
+                if (e.type === 'touchstart') e.preventDefault(); 
+            }
+            if (gameState === 'LOSE' || gameState === 'WIN') { resetGame(); }
+        }
+
+        canvas.addEventListener('mousemove', (e) => { updatePaddle(e.clientX); });
+        // Use 'passive: false' for touchmove to allow preventing default scroll
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (e.touches.length > 0) { updatePaddle(e.touches[0].clientX); } }, { passive: false });
+        
+        canvas.addEventListener('click', handleInteraction);
+        canvas.addEventListener('touchstart', handleInteraction);
+
+
+        function handleScroll() {
+            if (gameState === 'START_SCROLL') {
+                const scrollThreshold = 20; 
+                if (window.scrollY > scrollThreshold) {
+                    transitionProgress = 0; 
+                    gameState = 'TRANSITIONING'; 
+                    document.body.style.overflow = 'hidden'; // Lock scroll after starting
+                }
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            setupGameDimensions();
+            generateTintedCanvases(); 
+            setupBricks(); 
+        });
+
+
+        // --- Start Game Initialization ---
+        window.onload = async () => {
+            window.scrollTo(0, 0); 
+            document.body.style.overflowY = 'scroll'; 
+            
+            gameState = 'START_SCROLL';
+            transitionProgress = 0;
+
+            try {
+                loadAudioFiles();
+                await loadOriginalImages();
+                setupGameDimensions();
+                generateTintedCanvases();
+                setupBricks(true);
+                
+                window.addEventListener('scroll', handleScroll);
+                
+                requestAnimationFrame(draw); 
+
+            } catch (error) {
+                console.error("Failed to initialize game:", error);
+                gameActive = false; 
+                document.body.innerHTML = '<h1>Error loading game. Check console for errors.</h1>';
+            }
+        };
+    </script>
+</body>
+</html>

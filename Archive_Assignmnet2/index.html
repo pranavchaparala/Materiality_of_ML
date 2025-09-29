@@ -10,8 +10,10 @@
         /* Custom styles to match the minimalist, centered aesthetic and color palette from the image */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #e8e8e8; /* Light gray background to match image */
-            color: #3949ab; /* Deep indigo color for text, dots, and drawings */
+            /* UPDATED: Background color to match the softer, warmer palette from the new image */
+            background-color: #E6E0DD; 
+            /* UPDATED: Deep indigo color replaced with a soft, warm gray for text, dots, and drawings */
+            color: #686460; 
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -50,33 +52,42 @@
 
         .tab-active {
             font-weight: bold;
-            border-bottom-color: #3949ab;
+            /* UPDATED: Tab active color to new primary accent color */
+            border-bottom-color: #686460;
             opacity: 1;
         }
         /* --- End Tab Styling --- */
 
         .dot-svg {
             /* Styling for the initial dot state */
-            stroke: currentColor; /* Inherits #3949ab from body */
-            stroke-width: 2.5;
+            stroke: currentColor; /* Inherits #686460 from body */
+            stroke-width: 0; /* Hide stroke for filled squares */
             transition: transform 0.1s ease-out;
             cursor: pointer;
         }
         
-        .dot-svg circle {
-             fill: currentColor; /* Dots are solid */
-             r: 3; /* Reduced radius for a finer dot */
+        .dot-svg rect {
+             /* UPDATED: Use a filled, slightly lighter color for the dots */
+             fill: #C3B9B0; 
+             transition: fill 0.3s;
+        }
+
+        /* FIX: Add a hover effect to confirm visibility and interactivity */
+        .dot-svg rect:hover {
+            fill: #C0A89A; /* Slightly darker shade for visual feedback */
         }
 
         .flower-svg {
             /* Container styling (no fill) */
             fill: none; 
             transition: all 0.5s ease-in-out;
+            cursor: default; /* Change cursor for planted items */
         }
         
         /* Styles for the animation: applies to all paths inside a flower SVG */
         .flower-svg path {
-            stroke: currentColor;
+            /* Stroke color inherited from body (#686460) */
+            stroke: currentColor; 
             stroke-width: 4; /* Increased stroke weight */
             stroke-linecap: round;
             stroke-linejoin: round;
@@ -90,7 +101,7 @@
                 extend: {
                     // Custom colors are simplified since we now rely on 'currentColor' from the body
                     colors: {
-                        'plant-blue': '#3949ab',
+                        'plant-color': '#686460',
                     }
                 }
             }
@@ -122,14 +133,18 @@
                 </button>
             </div>
 
-            <!-- Styling to match the bold number and slightly faded subtitle -->
-            <h1 class="text-3xl font-semibold" style="color: rgba(57, 73, 171, 1);">Doodle Forest</h1>
-            <p id="garden-subtitle" class="text-sm font-weight mt-1" style="color: rgba(57, 73, 171, 0.7);">more days of growth (Planting: Flora)</p>
+            <!-- Header and subtitle color adjusted to match the new palette -->
+            <h1 class="text-3xl font-semibold" style="color: #686460;">Doodle Forest</h1>
+            <p id="garden-subtitle" class="text-sm font-weight mt-1" style="color: rgba(104, 100, 96, 0.7);">You are now adding more: Flora</p>
         </header>
 
         <!-- The 10x10 Grid Container, with reduced gap for a denser look -->
         <div id="garden-grid" class="grid grid-cols-10 gap-1 md:gap-1 aspect-square w-full">
             <!-- Dots will be populated here by JavaScript -->
+        </div>
+
+        <!-- UPDATED: Status bar is now hidden by default (using 'hidden' class) and has empty content -->
+        <div id="status-bar" class="mt-4 text-center text-base font-semibold py-2 rounded-lg hidden" style="color: #686460; background-color: #D6D0CC;">
         </div>
     </div>
 </div>
@@ -140,20 +155,20 @@
     // =========================================================================
     
     // Base directory where your Quick Draw data files are now located.
-    // NOTE: This relative path assumes the 'quick_draw_local' folder is in the same directory as this index.html file.
     const BASE_PATH = './quick_draw_local/';
 
     // File paths are updated to match the casing and naming conventions seen in your local file list screenshot.
     const FILE_PATHS = {
         // Flora Files
-        flower: BASE_PATH + 'flower_data_local.ndjson',
+        flower: BASE_PATH + 'flower_data_local.ndjson', 
         tree: BASE_PATH + 'tree_data_local.ndjson', 
         grass: BASE_PATH + 'Grass_data_local.ndjson', 
 
         // Fauna Files (based on files in your folder)
         bear: BASE_PATH + 'Bear_data_local.ndjson',
         lion: BASE_PATH + 'Lion_data_local.ndjson',
-        bird: BASE_PATH + 'Bird Data_data_local.ndjson',
+        // FIX: Replaced 'Bird Data_data_local.ndjson' with the correct URL encoded path to handle the space
+        bird: BASE_PATH + 'Bird%20Data_data_local.ndjson',
         monkey: BASE_PATH + 'Monkey_data_local.ndjson',
         crocodile: BASE_PATH + 'Crocodile_data_local.ndjson',
         giraffe: BASE_PATH + 'Giraffe_data_local.ndjson',
@@ -164,22 +179,28 @@
     
     // Group definitions for randomization
     const FLORA_CATEGORIES = ['flower', 'tree', 'grass'];
-    const FAUNA_CATEGORIES = ['bear', 'lion', 'bird', 'monkey', 'crocodile', 'giraffe', 'zebra', 'snake', 'tiger'];
-    const ALL_CATEGORIES = [...FLORA_CATEGORIES, ...FAUNA_CATEGORIES];
+    const FAUNA_CATEGATEGORIES = ['bear', 'lion', 'bird', 'monkey', 'crocodile', 'giraffe', 'zebra', 'snake', 'tiger'];
+    const ALL_CATEGORIES = [...FLORA_CATEGORIES, ...FAUNA_CATEGATEGORIES];
 
     // Store all loaded drawings, keyed by category
     const DRAWING_DATA = {};
-    ALL_CATEGORIES.forEach(cat => DRAWING_DATA[cat] = []); // Initialize all category arrays
+    ALL_CATEGORIES.forEach(cat => DRAWING_DATA[cat] = []); 
 
-    // New state to track which drawing indices have been used for each category
+    // State to track which drawing indices have been used for each category
     const USED_DRAWINGS = {};
     ALL_CATEGORIES.forEach(cat => USED_DRAWINGS[cat] = new Set());
 
     let activeGroup = 'flora'; // Initial selected group: 'flora' or 'fauna'
+    let isDragging = false; // State for drag-and-plant functionality
 
     const GRID_SIZE = 10;
     const GRID_CONTAINER_ID = 'garden-grid';
-    const DOT_RADIUS = 3; 
+    // Update: Decreased DOT_SIZE from 40 to 30 for a slightly smaller look
+    const DOT_SIZE = 30; 
+    const DOT_ROUNDING = 8; // Corner radius for the square
+    
+    // Global reference for the status bar element
+    let statusBar = null; 
 
     // =========================================================================
     // STEP 2: UTILITY FUNCTIONS
@@ -220,8 +241,6 @@
 
     /**
      * Parses the NDJSON string and populates the DRAWING_DATA array for the given category.
-     * @param {string} ndjsonData The raw text content of the NDJSON file.
-     * @param {string} category The category key (e.g., 'flower', 'tree', 'lion').
      */
     function processData(ndjsonData, category) {
         if (!ndjsonData || !ndjsonData.trim()) {
@@ -278,13 +297,15 @@
 
             if (!response || !response.ok) {
                 // If the loop finished without a successful response
+                let errorDetails = response ? `Status: ${response.status}` : 'No response received.';
+                
+                // ADDED: Detailed logging for file not found
                 if (response && response.status === 404) {
-                    console.error(`File not found: '${filePath}'. Ensure the filename (case/spaces/extension) is EXACTLY correct and the path is valid.`);
-                } else if (response) {
-                    throw new Error(`HTTP error! Status: ${response.status} for ${category}.`);
+                    console.error(`ERROR: File not found (404) for '${category}'. Please ensure the filename (case/spaces/extension) is EXACTLY correct and the path: ${filePath} is valid.`);
                 } else {
-                    throw new Error(`Network or Fetch error for ${category}.`);
+                    console.error(`ERROR: Failed to fetch data for ${category}. Details: ${errorDetails}`);
                 }
+                return; // Stop processing this category
             }
 
             const textData = await response.text();
@@ -308,13 +329,13 @@
         const subtitle = document.getElementById('garden-subtitle');
         if (subtitle) {
             const displayGroup = activeGroup.charAt(0).toUpperCase() + activeGroup.slice(1);
+            // Updated subtitle text
             subtitle.textContent = `You are now adding more: ${displayGroup}`;
         }
     }
 
     /**
      * Changes the currently active drawing group (Flora or Fauna).
-     * This function is globally accessible via onclick in the HTML.
      */
     window.changeGroup = function(newGroup) {
         activeGroup = newGroup;
@@ -322,12 +343,48 @@
         console.log(`Active planting group changed to: ${activeGroup}`);
     }
 
+    /**
+     * Sets up mouseover/mouseout listeners on a planted SVG to display its category name
+     * in the dedicated status bar and show the bar only on hover.
+     */
+    function setupPlantedHover(svgElement, categoryName) {
+        
+        // Function to run on mouse enter
+        function handleMouseEnter() {
+            if (statusBar) {
+                // 1. Display the name of the planted item
+                statusBar.textContent = ` ${categoryName}`;
+                // 2. Show the container (remove 'hidden' class)
+                statusBar.classList.remove('hidden');
+            }
+        }
+        
+        // Function to run on mouse leave
+        function handleMouseLeave() {
+            if (statusBar) {
+                // 1. Clear the text
+                statusBar.textContent = ""; 
+                // 2. Hide the container (add 'hidden' class)
+                statusBar.classList.add('hidden');
+            }
+        }
+
+        svgElement.addEventListener('mouseenter', handleMouseEnter);
+        svgElement.addEventListener('mouseleave', handleMouseLeave);
+    }
+
 
     /**
-     * Handles the click event on a dot, replacing it with a random drawing
-     * selected from the currently active group, ensuring no duplicates.
+     * Handles mouseover or mousedown event on a dot, triggering planting 
+     * if the mouse button is currently held down (isDragging is true).
      */
-    function handleDotClick(event) {
+    function handleDotInteraction(event) {
+        // Only plant if the mouse button is currently held down (dragging)
+        // OR if this is a direct mousedown event starting the drag
+        if (!isDragging && event.type !== 'mousedown') {
+            return;
+        }
+
         const svgElement = event.currentTarget;
         
         if (svgElement.dataset.planted) {
@@ -335,13 +392,18 @@
         }
         
         // 1. Determine which set of categories to use
-        const categoriesInGroup = activeGroup === 'flora' ? FLORA_CATEGORIES : FAUNA_CATEGORIES;
+        const categoriesInGroup = activeGroup === 'flora' ? FLORA_CATEGORIES : FAUNA_CATEGATEGORIES;
         
         // 2. Filter out categories that failed to load (or have no drawings)
         const loadedCategories = categoriesInGroup.filter(cat => DRAWING_DATA[cat] && DRAWING_DATA[cat].length > 0);
 
         if (loadedCategories.length === 0) {
-            console.error(`No drawings loaded for the active group: ${activeGroup}. Please check your files.`);
+            // Check if loading is still in progress (highly unlikely if grid is active, but safe check)
+            if (Object.values(DRAWING_DATA).every(arr => arr.length === 0)) {
+                console.error("No drawings loaded yet. Waiting for data to load or check file paths.");
+            } else {
+                console.warn(`No drawings loaded for the active group: ${activeGroup}. Please check your files or the category filter.`);
+            }
             return;
         }
 
@@ -357,7 +419,6 @@
         const totalDrawings = availableDrawings.length;
         if (usedIndices.size >= totalDrawings) {
             console.warn(`All unique drawings for category '${selectedCategory}' have been used. Cannot plant a unique item.`);
-            // Optionally, you could reset the used indices here, or just stop planting.
             return;
         }
         
@@ -381,9 +442,22 @@
         }
         svgElement.innerHTML = flowerSvgContent;
         svgElement.dataset.planted = 'true';
+
+        // NEW: Store the category and set up the custom hover status bar
+        svgElement.dataset.category = selectedCategory; 
+        const readableCategoryName = selectedCategory.charAt(0).toUpperCase() + selectedCategory.slice(1);
+        
+        // Setup the hover listeners to update the status bar
+        setupPlantedHover(svgElement, readableCategoryName); 
+        
+        // Cleanup classes
         svgElement.classList.remove('dot-svg', 'cursor-pointer');
         svgElement.classList.add('flower-svg');
-        svgElement.removeEventListener('click', handleDotClick);
+        
+        // Remove mouse interaction listeners now that the cell is planted
+        svgElement.removeEventListener('mouseover', handleDotInteraction);
+        svgElement.removeEventListener('mousedown', handleDotInteraction);
+
 
         // 10. ANIMATION LOGIC: Draw the strokes sequentially
         const paths = svgElement.querySelectorAll('.flower-stroke');
@@ -418,6 +492,9 @@
         const gridContainer = document.getElementById(GRID_CONTAINER_ID);
         gridContainer.innerHTML = ''; 
 
+        // Set global reference to status bar
+        statusBar = document.getElementById('status-bar');
+
         // A. Initial setup of the empty grid
         for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
             const cell = document.createElement('div');
@@ -428,23 +505,43 @@
             dotSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
             dotSvg.classList.add('w-full', 'h-full', 'dot-svg', 'cursor-pointer');
 
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute('cx', '50');
-            circle.setAttribute('cy', '50');
-            circle.setAttribute('r', DOT_RADIUS);
-            dotSvg.appendChild(circle);
+            // UPDATED: Use a rectangle for a rounded square dot
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            // Calculate position for centering the square in the 100x100 view box
+            const offset = (100 - DOT_SIZE) / 2; 
+            rect.setAttribute('x', offset);
+            rect.setAttribute('y', offset);
+            rect.setAttribute('width', DOT_SIZE);
+            rect.setAttribute('height', DOT_SIZE);
+            rect.setAttribute('rx', DOT_ROUNDING); // Corner radius
+            rect.setAttribute('ry', DOT_ROUNDING);
+            dotSvg.appendChild(rect);
 
-            dotSvg.addEventListener('click', handleDotClick);
+            // Add drag interaction listeners
+            dotSvg.addEventListener('mouseover', handleDotInteraction);
+            dotSvg.addEventListener('mousedown', handleDotInteraction); 
 
             cell.appendChild(dotSvg);
             gridContainer.appendChild(cell);
         }
         
-        // B. Update initial display
+        // B. Add global event listeners for drag functionality on the grid container
+        gridContainer.addEventListener('mousedown', (e) => {
+            // Check if primary button (left click) is pressed
+            if (e.button === 0) { 
+                isDragging = true;
+            }
+        });
+
+        // Set isDragging to false when mouse button is released anywhere on the document
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // C. Update initial display
         updateCategoryDisplay();
 
-        // C. Load and process data asynchronously for all categories
-        // Uses Promise.all to wait for all files to attempt loading
+        // D. Load and process data asynchronously for all categories
         await Promise.all(
             ALL_CATEGORIES.map(category => loadData(category))
         );

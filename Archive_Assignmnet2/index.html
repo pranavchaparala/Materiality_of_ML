@@ -18,23 +18,21 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            /* Ensure the body takes up exactly the viewport height and prevents vertical scrolling issues */
             min-height: 100vh;
             margin: 0;
             padding: 20px;
+            /* Set box-sizing to border-box globally to prevent padding/border from causing overflow */
+            box-sizing: border-box; 
         }
         
-        /* New wrapper to apply global scale */
-        #scale-wrapper {
-            transform: scale(0.85); /* Scales the content down to 85% */
-            transform-origin: top center; /* Ensures scaling is anchored at the top center */
-            margin: 0; /* Remove default margins */
-        }
-
         .container-main {
+            /* Now uses max-width to control the container size, and is centered */
             width: 100%;
             max-width: 600px; /* Limit main content width */
-            padding: 2rem;
+            padding: 0 1rem; /* Reduced horizontal padding to prevent overflow on very small screens */
             text-align: center;
+            box-sizing: border-box;
         }
 
         /* --- Tab Styling --- */
@@ -109,12 +107,10 @@
     </script>
 </head>
 <body>
-
-<!-- Apply the scale wrapper around the main container -->
-<div id="scale-wrapper">
+    
     <!-- Simplified container to match the clean background -->
     <div class="container-main">
-        <header class="text-center mb-6">
+        <header class="text-center mb-8 mt-4"> <!-- Increased margin bottom and added margin top for spacing -->
             <!-- Tab Selector -->
             <div id="category-selector" class="flex justify-center mb-8 border-b border-gray-300">
                 <button 
@@ -133,9 +129,15 @@
                 </button>
             </div>
 
-            <!-- Header and subtitle color adjusted to match the new palette -->
-            <h1 class="text-3xl font-semibold" style="color: #686460;">Doodle Forest</h1>
-            <p id="garden-subtitle" class="text-sm font-weight mt-1" style="color: rgba(104, 100, 96, 0.7);">You are now adding more: Flora</p>
+            <!-- Replaced text heading with image -->
+            <img 
+                src="title_logo.svg" 
+                alt="Doodle Forest Title Logo" 
+                class="mx-auto h-20 max-h-20 w-auto object-contain mb-2"
+                onerror="this.onerror=null; this.src='https://placehold.co/300x80/686460/E6E0DD?text=Doodle+Forest'"
+            >
+            
+            <!-- The subtitle for active group status remains commented out -->
         </header>
 
         <!-- The 10x10 Grid Container, with reduced gap for a denser look -->
@@ -143,11 +145,19 @@
             <!-- Dots will be populated here by JavaScript -->
         </div>
 
-        <!-- UPDATED: Status bar is now hidden by default (using 'hidden' class) and has empty content -->
-        <div id="status-bar" class="mt-4 text-center text-base font-semibold py-2 rounded-lg hidden" style="color: #686460; background-color: #D6D0CC;">
+        <!-- NEW: Status Bar Wrapper for Centering and Preventing Layout Shift -->
+        <div class="mt-4 flex justify-center">
+            <div id="status-bar" 
+                 class="text-center text-base font-semibold py-2 px-4 rounded-lg 
+                        transition-opacity duration-300 opacity-0" 
+                 style="color: #686460; background-color: #D6D0CC; min-width: 150px;"> 
+                <!-- min-width ensures it doesn't collapse to 0px when empty/faded -->
+            </div>
         </div>
+        <!-- END Status Bar Wrapper -->
+
     </div>
-</div>
+
 
 <script>
     // =========================================================================
@@ -325,13 +335,7 @@
         document.getElementById('tab-fauna').classList.remove('tab-active');
         document.getElementById(`tab-${activeGroup}`).classList.add('tab-active');
         
-        // Update subtitle text
-        const subtitle = document.getElementById('garden-subtitle');
-        if (subtitle) {
-            const displayGroup = activeGroup.charAt(0).toUpperCase() + activeGroup.slice(1);
-            // Updated subtitle text
-            subtitle.textContent = `You are now adding more: ${displayGroup}`;
-        }
+        // Subtitle is commented out as requested
     }
 
     /**
@@ -354,18 +358,18 @@
             if (statusBar) {
                 // 1. Display the name of the planted item
                 statusBar.textContent = ` ${categoryName}`;
-                // 2. Show the container (remove 'hidden' class)
-                statusBar.classList.remove('hidden');
+                // 2. Show the container by setting opacity to 100 (smooth transition handled by CSS)
+                statusBar.classList.remove('opacity-0');
+                statusBar.classList.add('opacity-100');
             }
         }
         
         // Function to run on mouse leave
         function handleMouseLeave() {
             if (statusBar) {
-                // 1. Clear the text
-                statusBar.textContent = ""; 
-                // 2. Hide the container (add 'hidden' class)
-                statusBar.classList.add('hidden');
+                // 1. Hide the container by setting opacity to 0
+                statusBar.classList.remove('opacity-100');
+                statusBar.classList.add('opacity-0');
             }
         }
 
